@@ -1,0 +1,232 @@
+/* ============================================================
+   5. DATABASE DESIGN (PostgreSQL)
+   Project: Car Market Listings
+   ============================================================ */
+
+
+/* ============================================================
+   5.1 Database design approach
+   Schema and tables are designed directly
+   using the PostgreSQL IDE (pgAdmin).
+   ============================================================ */
+
+
+/* ============================================================
+   5.2 Create a dedicated schema (not public)
+   ============================================================ */
+
+CREATE SCHEMA IF NOT EXISTS car_market;
+
+
+/* ============================================================
+   5.3 Core tables with primary keys and relationships
+   - Minimum 3 related tables
+   - Every table has a primary key
+   - Proper foreign keys
+   - Snake_case naming convention
+   ============================================================ */
+
+CREATE TABLE IF NOT EXISTS car_market.core (
+    listing_id BIGINT PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS car_market.pricing (
+    listing_id BIGINT PRIMARY KEY
+        REFERENCES car_market.core(listing_id) ON DELETE CASCADE,
+    price NUMERIC(14,2),
+    year INT,
+    mileage INT
+);
+
+CREATE TABLE IF NOT EXISTS car_market.vehicle (
+    listing_id BIGINT PRIMARY KEY
+        REFERENCES car_market.core(listing_id) ON DELETE CASCADE,
+    make TEXT,
+    model TEXT
+);
+
+CREATE TABLE IF NOT EXISTS car_market.specs (
+    listing_id BIGINT PRIMARY KEY
+        REFERENCES car_market.core(listing_id) ON DELETE CASCADE,
+    engine_size NUMERIC(5,2),
+    engine_type TEXT,
+    transmission TEXT,
+    drive_type TEXT,
+    steering_wheel TEXT,
+    wheel_size NUMERIC(5,2),
+    comfort TEXT
+);
+
+CREATE TABLE IF NOT EXISTS car_market.appearance (
+    listing_id BIGINT PRIMARY KEY
+        REFERENCES car_market.core(listing_id) ON DELETE CASCADE,
+    body_type TEXT,
+    color TEXT,
+    interior_material TEXT,
+    sunroof BOOLEAN
+);
+
+CREATE TABLE IF NOT EXISTS car_market.status (
+    listing_id BIGINT PRIMARY KEY
+        REFERENCES car_market.core(listing_id) ON DELETE CASCADE,
+    cleared_customs BOOLEAN DEFAULT FALSE,
+    condition TEXT
+);
+
+
+/* ============================================================
+   5.4 Normalization (3NF)
+   - Data is split into logical groups
+   - No repeating groups
+   - Non-key attributes depend only on the primary key
+   ============================================================ */
+
+
+/* ============================================================
+   5.5 Junction / Bridge table (Many-to-Many relationship)
+   Example: Listings <-> Comfort Features
+   ============================================================ */
+
+CREATE TABLE IF NOT EXISTS car_market.feature (
+    feature_id SERIAL PRIMARY KEY,
+    feature_name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS car_market.listing_feature (
+    listing_id BIGINT NOT NULL
+        REFERENCES car_market.core(listing_id) ON DELETE CASCADE,
+    feature_id INT NOT NULL
+        REFERENCES car_market.feature(feature_id) ON DELETE RESTRICT,
+    PRIMARY KEY (listing_id, feature_id)
+);
+
+
+/* ============================================================
+   5.6 Table partitioning (Range partitioning by year)
+   Partitioning demonstration table
+   ============================================================ */
+
+CREATE TABLE IF NOT EXISTS car_market.listing_fact_part (
+    listing_id BIGINT NOT NULL,
+    year INT NOT NULL,
+    price NUMERIC(14,2),
+    mileage INT,
+    make TEXT,
+    PRIMARY KEY (listing_id, year)
+) PARTITION BY RANGE (year);
+
+CREATE TABLE IF NOT EXISTS car_market.listing_fact_2010
+    PARTITION OF car_market.listing_fact_part
+    FOR VALUES FROM (2010) TO (2020);
+
+CREATE TABLE IF NOT EXISTS car_market.listing_fact_2020
+    PARTITION OF car_market.listing_fact_part
+    FOR VALUES FROM (2020) TO (2030);
+
+CREATE TABLE IF NOT EXISTS car_market.listing_fact_other
+    PARTITION OF car_market.listing_fact_part
+    DEFAULT;
+
+
+/* ============================================================
+   5.7 Indexes for query optimization
+   ============================================================ */
+
+CREATE INDEX IF NOT EXISTS idx_pricing_year
+    ON car_market.pricing(year);
+
+CREATE INDEX IF NOT EXISTS idx_pricing_price
+    ON car_market.pricing(price);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_make_model
+    ON car_market.vehicle(make, model);
+
+CREATE INDEX IF NOT EXISTS idx_specs_engine_type
+    ON car_market.specs(engine_type);
+
+CREATE INDEX IF NOT EXISTS idx_listing_feature_feature_id
+    ON car_market.listing_feature(feature_id);
+
+
+/* ============================================================
+   5.8 Constraints (Data integrity rules)
+   NOT NULL, UNIQUE, CHECK, DEFAULT
+   ============================================================ */
+
+ALTER TABLE car_market.pricing
+    ADD CONSTRAINT ck_price_nonneg
+    CHECK (price IS NULL OR price >= 0);
+
+ALTER TABLE car_market.pricing
+    ADD CONSTRAINT chk_mileage_nonneg
+    CHECK (mileage IS NULL OR mileage >= 0);
+
+ALTER TABLE car_market.pricing
+    ADD CONSTRAINT chk_year_range
+    CHECK (
+        year IS NULL
+        OR year BETWEEN 1950 AND EXTRACT(YEAR FROM CURRENT_DATE)::INT
+    );
+
+ALTER TABLE car_market.specs
+    ADD CONSTRAINT chk_engine_size_pos
+    CHECK (engine_size IS NULL OR engine_size > 0);
+
+ALTER TABLE car_market.specs
+    ADD CONSTRAINT chk_wheel_size_pos
+    CHECK (wheel_size IS NULL OR wheel_size > 0);
+
+
+/* ============================================================
+   5.9 Views for complex and frequently used queries
+   ============================================================ */
+
+-- View 1: Full listing information (dashboard-ready)
+CREATE OR REPLACE VIEW car_market.vw_listings_full AS
+SELECT
+    c.listing_id,
+    c.url,
+    v.make,
+    v.model,
+    p.year,
+    p.price,
+    p.mileage,
+    s.engine_size,
+    s.engine_type,
+    s.transmission,
+    s.drive_type,
+    a.body_type,
+    a.color,
+    a.interior_material,
+    a.sunroof,
+    st.cleared_customs,
+    st.condition
+FROM car_market.core c
+JOIN car_market.pricing p ON p.listing_id = c.listing_id
+LEFT JOIN car_market.vehicle v ON v.listing_id = c.listing_id
+LEFT JOIN car_market.specs s ON s.listing_id = c.listing_id
+LEFT JOIN car_market.appearance a ON a.listing_id = c.listing_id
+LEFT JOIN car_market.status st ON st.listing_id = c.listing_id;
+
+-- View 2: Average price by make and year
+CREATE OR REPLACE VIEW car_market.vw_avg_price_make_year AS
+SELECT
+    v.make,
+    p.year,
+    COUNT(*) AS listings,
+    AVG(p.price) AS avg_price
+FROM car_market.vehicle v
+JOIN car_market.pricing p ON p.listing_id = v.listing_id
+WHERE p.price IS NOT NULL AND p.year IS NOT NULL
+GROUP BY v.make, p.year;
+
+
+/* ============================================================
+   5.10 ER Diagram
+   - core -> pricing / vehicle / specs / appearance / status (1:1)
+   - core <-> feature via listing_feature (M:N)
+   - listing_fact_part demonstrates partitioning
+   ER diagram submitted separately as PNG/PDF
+   ============================================================ */
+
