@@ -7,15 +7,6 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
-# ------------------------------------------------------------
-# Environment variables (for local development)
-# ------------------------------------------------------------
-os.environ["PGHOST"] = "localhost"
-os.environ["PGPORT"] = "5432"
-os.environ["PGDATABASE"] = "car_market"
-os.environ["PGUSER"] = "sergey"
-os.environ["PGPASSWORD"] = "1111"
-
 # ============================================================
 # 6. DATA INSERTION (Python + psycopg2)
 # - env vars (no hardcoded SQL credentials)
@@ -32,11 +23,11 @@ os.environ["PGPASSWORD"] = "1111"
 # (A) Environment variables
 # -----------------------------
 # NOTE: For coursework/local use. Avoid committing real passwords to Git.
-os.environ.setdefault("PGHOST", "localhost")
-os.environ.setdefault("PGPORT", "5432")
-os.environ.setdefault("PGDATABASE", "car_market")
-os.environ.setdefault("PGUSER", "sergey")
-os.environ.setdefault("PGPASSWORD", "your_password")  # <- փոխիր քո իրական password-ով
+os.environ["PGHOST"] = "localhost"
+os.environ["PGPORT"] = "5432"
+os.environ["PGDATABASE"] = "car_market"
+os.environ["PGUSER"] = "sergey"
+os.environ["PGPASSWORD"] = "1111"
 
 # -----------------------------
 # (B) Paths / Settings
